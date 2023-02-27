@@ -8,6 +8,7 @@ import (
 const (
 	TagKeyGorm = "gorm"
 	TagKeyJson = "json"
+	TagKeyDesc = "dc"
 
 	//gorm tag
 	TagKeyGormColumn        = "column"

@@ -96,15 +96,23 @@ func GetQueryStructMetaFromObject(obj helper.Object, conf *model.Config) (*Query
 		if jt := fl.JSONTag(); jt != "" {
 			tag.Set(field.TagKeyJson, jt)
 		}
-
-		fields = append(fields, &model.Field{
+		m := &model.Field{
 			Name:             fl.Name(),
 			Type:             fl.Type(),
 			ColumnName:       fl.ColumnName(),
 			Tag:              tag,
 			ColumnComment:    fl.Comment(),
 			MultilineComment: strings.Contains(fl.Comment(), "\n"),
-		})
+		}
+		dc := m.ColumnComment
+		if m.MultilineComment {
+			dc = strings.ReplaceAll(dc, "\n", ". ")
+			dc = strings.ReplaceAll(dc, "\t", "")
+		}
+		if dc != "" {
+			tag.Set(field.TagKeyDesc, dc)
+		}
+		fields = append(fields, m)
 	}
 
 	return &QueryStructMeta{
