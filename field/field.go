@@ -51,7 +51,7 @@ func (field Field) Lte(value driver.Valuer) Expr {
 }
 
 // Like ...
-func (field Field) Like(value driver.Valuer) Expr {
+func (field Field) Like(value string) Expr {
 	return expr{e: clause.Like{Column: field.RawExpr(), Value: value}}
 }
 

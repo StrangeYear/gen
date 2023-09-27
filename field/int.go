@@ -58,12 +58,12 @@ func (field Int) NotBetween(left int, right int) Expr {
 }
 
 // Like ...
-func (field Int) Like(value int) Expr {
+func (field Int) Like(value string) Expr {
 	return expr{e: clause.Like{Column: field.RawExpr(), Value: value}}
 }
 
 // NotLike ...
-func (field Int) NotLike(value int) Expr {
+func (field Int) NotLike(value string) Expr {
 	return expr{e: clause.Not(field.Like(value).expression())}
 }
 
@@ -214,12 +214,12 @@ func (field Int8) NotBetween(left int8, right int8) Expr {
 }
 
 // Like ...
-func (field Int8) Like(value int8) Expr {
+func (field Int8) Like(value string) Expr {
 	return expr{e: clause.Like{Column: field.RawExpr(), Value: value}}
 }
 
 // NotLike ...
-func (field Int8) NotLike(value int8) Expr {
+func (field Int8) NotLike(value string) Expr {
 	return expr{e: clause.Not(field.Like(value).expression())}
 }
 
@@ -370,12 +370,12 @@ func (field Int16) NotBetween(left int16, right int16) Expr {
 }
 
 // Like ...
-func (field Int16) Like(value int16) Expr {
+func (field Int16) Like(value string) Expr {
 	return expr{e: clause.Like{Column: field.RawExpr(), Value: value}}
 }
 
 // NotLike ...
-func (field Int16) NotLike(value int16) Expr {
+func (field Int16) NotLike(value string) Expr {
 	return expr{e: clause.Not(field.Like(value).expression())}
 }
 
@@ -526,12 +526,12 @@ func (field Int32) NotBetween(left int32, right int32) Expr {
 }
 
 // Like ...
-func (field Int32) Like(value int32) Expr {
+func (field Int32) Like(value string) Expr {
 	return expr{e: clause.Like{Column: field.RawExpr(), Value: value}}
 }
 
 // NotLike ...
-func (field Int32) NotLike(value int32) Expr {
+func (field Int32) NotLike(value string) Expr {
 	return expr{e: clause.Not(field.Like(value).expression())}
 }
 
@@ -682,12 +682,12 @@ func (field Int64) NotBetween(left int64, right int64) Expr {
 }
 
 // Like ...
-func (field Int64) Like(value int64) Expr {
+func (field Int64) Like(value string) Expr {
 	return expr{e: clause.Like{Column: field.RawExpr(), Value: value}}
 }
 
 // NotLike ...
-func (field Int64) NotLike(value int64) Expr {
+func (field Int64) NotLike(value string) Expr {
 	return expr{e: clause.Not(field.Like(value).expression())}
 }
 
@@ -838,12 +838,12 @@ func (field Uint) NotBetween(left uint, right uint) Expr {
 }
 
 // Like ...
-func (field Uint) Like(value uint) Expr {
+func (field Uint) Like(value string) Expr {
 	return expr{e: clause.Like{Column: field.RawExpr(), Value: value}}
 }
 
 // NotLike ...
-func (field Uint) NotLike(value uint) Expr {
+func (field Uint) NotLike(value string) Expr {
 	return expr{e: clause.Not(field.Like(value).expression())}
 }
 
@@ -994,12 +994,12 @@ func (field Uint8) NotBetween(left uint8, right uint8) Expr {
 }
 
 // Like ...
-func (field Uint8) Like(value uint8) Expr {
+func (field Uint8) Like(value string) Expr {
 	return expr{e: clause.Like{Column: field.RawExpr(), Value: value}}
 }
 
 // NotLike ...
-func (field Uint8) NotLike(value uint8) Expr {
+func (field Uint8) NotLike(value string) Expr {
 	return expr{e: clause.Not(field.Like(value).expression())}
 }
 
@@ -1150,12 +1150,12 @@ func (field Uint16) NotBetween(left uint16, right uint16) Expr {
 }
 
 // Like ...
-func (field Uint16) Like(value uint16) Expr {
+func (field Uint16) Like(value string) Expr {
 	return expr{e: clause.Like{Column: field.RawExpr(), Value: value}}
 }
 
 // NotLike ...
-func (field Uint16) NotLike(value uint16) Expr {
+func (field Uint16) NotLike(value string) Expr {
 	return expr{e: clause.Not(field.Like(value).expression())}
 }
 
@@ -1306,12 +1306,12 @@ func (field Uint32) NotBetween(left uint32, right uint32) Expr {
 }
 
 // Like ...
-func (field Uint32) Like(value uint32) Expr {
+func (field Uint32) Like(value string) Expr {
 	return expr{e: clause.Like{Column: field.RawExpr(), Value: value}}
 }
 
 // NotLike ...
-func (field Uint32) NotLike(value uint32) Expr {
+func (field Uint32) NotLike(value string) Expr {
 	return expr{e: clause.Not(field.Like(value).expression())}
 }
 
@@ -1462,12 +1462,12 @@ func (field Uint64) NotBetween(left uint64, right uint64) Expr {
 }
 
 // Like ...
-func (field Uint64) Like(value uint64) Expr {
+func (field Uint64) Like(value string) Expr {
 	return expr{e: clause.Like{Column: field.RawExpr(), Value: value}}
 }
 
 // NotLike ...
-func (field Uint64) NotLike(value uint64) Expr {
+func (field Uint64) NotLike(value string) Expr {
 	return expr{e: clause.Not(field.Like(value).expression())}
 }
 
