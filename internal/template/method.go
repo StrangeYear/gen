@@ -20,6 +20,12 @@ func ({{.S}} {{.TargetStruct}}Do){{.FuncSign}}{
 	executeSQL = {{.S}}.UnderlyingDB().{{.GormOption}}(generateSQL.String(){{if .HasSQLData}},params...{{end}}){{if not .ResultData.IsNull}}.{{.GormRunMethodName}}({{if .HasGotPoint}}&{{end}}{{.ResultData.Name}}){{end}}  // ignore_security_alert
 	{{if .ReturnRowsAffected}}rowsAffected = executeSQL.RowsAffected
 	{{end}}{{if .ReturnError}}err = executeSQL.Error
+	{{if and (not .ResultData.IsNull) .ResultData.IsPointer}}if err != nil {
+		return nil, err
+	}{{end}}
+	{{else if and (not .ResultData.IsNull) .ResultData.IsPointer}}if err := executeSQL.Error; err != nil {
+		return nil
+	}
 	{{end}}{{if .ReturnNothing}}_ = executeSQL
 	{{end}}{{end}}
 	return
