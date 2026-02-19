@@ -27,3 +27,18 @@ func (like ILike) NegationBuild(builder clause.Builder) {
 	}
 	builder.AddVar(builder, like.Value)
 }
+
+type Filter struct {
+	Column interface{}
+	Cond   clause.Where
+}
+
+func (f Filter) Build(builder clause.Builder) {
+	if stmt, ok := builder.(*gorm.Statement); ok && stmt.Dialector.Name() == "postgres" {
+		e := clause.Expr{SQL: "? FILTER (?)", Vars: []interface{}{f.Column, f.Cond}}
+		e.Build(builder)
+	} else {
+		e := clause.Expr{SQL: "?", Vars: []interface{}{f.Column}}
+		e.Build(builder)
+	}
+}
