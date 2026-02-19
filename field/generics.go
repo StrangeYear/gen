@@ -88,6 +88,11 @@ func (field genericsField[T]) Coalesce(value interface{}) genericsField[T] {
 	return genericsField[T]{field.coalesce(value)}
 }
 
+// Filter ...
+func (field genericsField[T]) Filter(exprs ...clause.Expression) genericsField[T] {
+	return genericsField[T]{field.filter(exprs...)}
+}
+
 // IfNull ...
 func (field genericsField[T]) IfNull(value T) Expr {
 	return field.ifNull(value)

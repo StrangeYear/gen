@@ -431,3 +431,11 @@ func (e expr) sum() expr {
 func (e expr) coalesce(value interface{}) expr {
 	return e.setE(clause.Expr{SQL: "COALESCE(?, ?)", Vars: []interface{}{e.RawExpr(), value}})
 }
+
+func (e expr) filter(exprs ...clause.Expression) expr {
+	if len(exprs) == 0 {
+		return e
+	}
+
+	return e.setE(Filter{e.RawExpr(), clause.Where{Exprs: exprs}})
+}
