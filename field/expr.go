@@ -426,3 +426,7 @@ func (e expr) field(value interface{}) expr {
 func (e expr) sum() expr {
 	return e.setE(clause.Expr{SQL: "SUM(?)", Vars: []interface{}{e.RawExpr()}})
 }
+
+func (e expr) coalesce(value interface{}) expr {
+	return e.setE(clause.Expr{SQL: "COALESCE(?, ?)", Vars: []interface{}{e.RawExpr(), value}})
+}

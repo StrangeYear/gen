@@ -73,6 +73,11 @@ func (field genericsField[T]) Sum() genericsField[T] {
 	return genericsField[T]{field.sum()}
 }
 
+// Coalesce ...
+func (field genericsField[T]) Coalesce(value interface{}) genericsField[T] {
+	return genericsField[T]{field.coalesce(value)}
+}
+
 // IfNull ...
 func (field genericsField[T]) IfNull(value T) Expr {
 	return field.ifNull(value)
