@@ -888,12 +888,17 @@ func buildExpr4Select(stmt *gorm.Statement, exprs ...field.Expr) (query string, 
 		return "", nil
 	}
 
-	var queryItems []string
+	var (
+		queryItems []string
+		offset     = len(stmt.Vars)
+	)
+	newStmt := &gorm.Statement{DB: stmt.DB, Table: stmt.Table, Schema: stmt.Schema, Vars: make([]interface{}, offset)}
 	for _, e := range exprs {
-		sql, vars := e.BuildWithArgs(stmt)
+		sql, vars := e.BuildWithArgs(newStmt)
 		queryItems = append(queryItems, sql.String())
-		args = append(args, vars...)
+		newStmt.Vars = append(newStmt.Vars, vars...)
 	}
+	args = newStmt.Vars[offset:]
 	if len(args) == 0 {
 		return queryItems[0], toInterfaceSlice(queryItems[1:])
 	}

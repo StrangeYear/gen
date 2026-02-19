@@ -136,9 +136,10 @@ func (e expr) BuildWithArgs(stmt *gorm.Statement) (sql, []interface{}) {
 	if e.e == nil {
 		return sql(e.BuildColumn(stmt, WithAll)), nil
 	}
-	newStmt := &gorm.Statement{DB: stmt.DB, Table: stmt.Table, Schema: stmt.Schema}
+	offset := len(stmt.Vars)
+	newStmt := &gorm.Statement{DB: stmt.DB, Table: stmt.Table, Schema: stmt.Schema, Vars: make([]interface{}, offset)}
 	e.e.Build(newStmt)
-	return sql(newStmt.SQL.String()), newStmt.Vars
+	return sql(newStmt.SQL.String()), newStmt.Vars[offset:]
 }
 
 func (e expr) RawExpr() expression {
