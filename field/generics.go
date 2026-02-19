@@ -63,6 +63,16 @@ func (field genericsField[T]) NotLike(value string) Expr {
 	return expr{e: clause.Not(field.Like(value).expression())}
 }
 
+// ILike ...
+func (field genericsField[T]) ILike(value string) Expr {
+	return expr{e: ILike{Column: field.RawExpr(), Value: value}}
+}
+
+// NotILike ...
+func (field genericsField[T]) NotILike(value string) Expr {
+	return expr{e: clause.Not(field.ILike(value).expression())}
+}
+
 // Value ...
 func (field genericsField[T]) Value(value T) AssignExpr {
 	return field.value(value)
