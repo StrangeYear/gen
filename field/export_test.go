@@ -217,31 +217,66 @@ func TestExpr_Build(t *testing.T) {
 			Expr:   field.NewUint("", "id").Avg().As("number"),
 			Result: "AVG(`id`) AS `number`",
 		},
-	{
-		Expr:         field.NewValuerNumber[password]("t", "amount").Add(p),
-		Result:       "`t`.`amount`+?",
-		ExpectedVars: []interface{}{p},
-	},
-	{
-		Expr:         field.NewValuerNumber[password]("t", "amount").Sub(p),
-		Result:       "`t`.`amount`-?",
-		ExpectedVars: []interface{}{p},
-	},
-	{
-		Expr:         field.NewValuerNumber[password]("t", "amount").Mul(p),
-		Result:       "`t`.`amount`*?",
-		ExpectedVars: []interface{}{p},
-	},
-	{
-		Expr:         field.NewValuerNumber[password]("t", "amount").Div(p),
-		Result:       "`t`.`amount`/?",
-		ExpectedVars: []interface{}{p},
-	},
-	{
-		Expr:         field.NewValuerNumber[password]("t", "amount").Between(p, p),
-		Result:       "`t`.`amount` BETWEEN ? AND ?",
-		ExpectedVars: []interface{}{p, p},
-	},
+		{
+			Expr:         field.NewValuerNumber[password]("t", "amount").Add(p),
+			Result:       "`t`.`amount`+?",
+			ExpectedVars: []interface{}{p},
+		},
+		{
+			Expr:         field.NewValuerNumber[password]("t", "amount").Sub(p),
+			Result:       "`t`.`amount`-?",
+			ExpectedVars: []interface{}{p},
+		},
+		{
+			Expr:         field.NewValuerNumber[password]("t", "amount").Mul(p),
+			Result:       "`t`.`amount`*?",
+			ExpectedVars: []interface{}{p},
+		},
+		{
+			Expr:         field.NewValuerNumber[password]("t", "amount").Div(p),
+			Result:       "`t`.`amount`/?",
+			ExpectedVars: []interface{}{p},
+		},
+		{
+			Expr:         field.NewValuerNumber[password]("t", "amount").Between(p, p),
+			Result:       "`t`.`amount` BETWEEN ? AND ?",
+			ExpectedVars: []interface{}{p, p},
+		},
+		{
+			Expr:         field.NewValuerTime[password]("t", "created_at").Between(p, p),
+			Result:       "`t`.`created_at` BETWEEN ? AND ?",
+			ExpectedVars: []interface{}{p, p},
+		},
+		{
+			Expr:         field.NewValuerTime[password]("t", "created_at").DateDiff(p),
+			Result:       "DATEDIFF(`t`.`created_at`,?)",
+			ExpectedVars: []interface{}{p},
+		},
+		{
+			Expr:         field.NewValuerTime[password]("t", "created_at").Add(24 * time.Hour),
+			Result:       "DATE_ADD(`t`.`created_at`, INTERVAL ? MICROSECOND)",
+			ExpectedVars: []interface{}{time.Duration(24 * time.Hour).Microseconds()},
+		},
+		{
+			Expr:   field.NewValuerTime[password]("t", "created_at").Date(),
+			Result: "DATE(`t`.`created_at`)",
+		},
+		{
+			Expr:   field.NewValuerTime[password]("t", "created_at").Trunc("month"),
+			Result: "date_trunc('month', `t`.`created_at`)",
+		},
+		{
+			Expr:   field.NewValuerTime[password]("t", "created_at").Trunc("day"),
+			Result: "date_trunc('day', `t`.`created_at`)",
+		},
+		{
+			Expr:   field.NewTime("t", "created_at").Trunc("week"),
+			Result: "date_trunc('week', `t`.`created_at`)",
+		},
+		{
+			Expr:   field.NewTime("t", "created_at").Trunc("unsupported"),
+			Result: "date_trunc('day', `t`.`created_at`)",
+		},
 		{
 			Expr:         field.NewUint("", "id").Eq(10),
 			ExpectedVars: []interface{}{uint(10)},

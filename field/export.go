@@ -7,7 +7,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"strings"
-	"time"
 )
 
 var (
@@ -68,6 +67,10 @@ func NewNumber[T constraints.Integer | constraints.Float](table, column string, 
 
 func NewValuerNumber[T driver.Valuer](table, column string, opts ...Option) ValuerNumber[T] {
 	return newValuerNumber[T](expr{col: toColumn(table, column, opts...)})
+}
+
+func NewValuerTime[T any](table, column string, opts ...Option) ValuerTime[T] {
+	return newValuerTime[T](expr{col: toColumn(table, column, opts...)})
 }
 
 // NewInt create new field for int
@@ -155,7 +158,7 @@ func NewBool(table, column string, opts ...Option) Bool {
 
 // NewTime ...
 func NewTime(table, column string, opts ...Option) Time {
-	return Time{genericsField[time.Time]{expr{col: toColumn(table, column, opts...)}}}
+	return newTime(expr{col: toColumn(table, column, opts...)})
 }
 
 func toColumn(table, column string, opts ...Option) clause.Column {
