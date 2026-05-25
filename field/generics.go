@@ -84,7 +84,7 @@ func (field genericsField[T]) Sum() genericsField[T] {
 }
 
 // Coalesce ...
-func (field genericsField[T]) Coalesce(value interface{}) genericsField[T] {
+func (field genericsField[T]) Coalesce(value T) genericsField[T] {
 	return genericsField[T]{field.coalesce(value)}
 }
 

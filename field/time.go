@@ -134,6 +134,16 @@ func (field ValuerTime[T]) NotIn(values ...T) Expr {
 	return expr{e: clause.Not(field.In(values...).expression())}
 }
 
+// Coalesce ...
+func (field ValuerTime[T]) Coalesce(value T) ValuerTime[T] {
+	return newValuerTime[T](field.coalesce(value))
+}
+
+// CoalesceCol ...
+func (field ValuerTime[T]) CoalesceCol(col ValuerTime[T]) ValuerTime[T] {
+	return newValuerTime[T](field.expr.CoalesceCol(col))
+}
+
 // Add ...
 func (field ValuerTime[T]) Add(value time.Duration) ValuerTime[T] {
 	return newValuerTime[T](field.add(value))

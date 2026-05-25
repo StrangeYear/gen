@@ -25,6 +25,9 @@ func (p password) Value() (driver.Value, error) {
 func TestExpr_Build(t *testing.T) {
 	timeData, _ := time.Parse("2006-01-02 15:04:05", "2021-06-29 15:11:49")
 	const p = password("i am password")
+	var coalescedValuerTime field.ValuerTime[password] = field.NewValuerTime[password]("t", "created_at").Coalesce(p)
+	var coalescedValuerTimeCol field.ValuerTime[password] = field.NewValuerTime[password]("t", "created_at").
+		CoalesceCol(field.NewValuerTime[password]("t", "updated_at"))
 
 	testcases := []struct {
 		Expr         field.Expr
@@ -256,6 +259,15 @@ func TestExpr_Build(t *testing.T) {
 			Expr:         field.NewValuerTime[password]("t", "created_at").Add(24 * time.Hour),
 			Result:       "DATE_ADD(`t`.`created_at`, INTERVAL ? MICROSECOND)",
 			ExpectedVars: []interface{}{time.Duration(24 * time.Hour).Microseconds()},
+		},
+		{
+			Expr:         coalescedValuerTime.Date(),
+			Result:       "DATE(COALESCE(`t`.`created_at`, ?))",
+			ExpectedVars: []interface{}{p},
+		},
+		{
+			Expr:   coalescedValuerTimeCol.Date(),
+			Result: "DATE(COALESCE(`t`.`created_at`, `t`.`updated_at`))",
 		},
 		{
 			Expr:   field.NewValuerTime[password]("t", "created_at").Date(),

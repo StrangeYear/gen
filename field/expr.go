@@ -240,6 +240,10 @@ func (e expr) SetCol(col Expr) AssignExpr {
 	return e.setE(clause.Eq{Column: e.col.Name, Value: col.RawExpr()})
 }
 
+func (e expr) CoalesceCol(col Expr) expr {
+	return e.setE(clause.Expr{SQL: "COALESCE(?, ?)", Vars: []interface{}{e.RawExpr(), col.RawExpr()}})
+}
+
 // ======================== operate columns ========================
 func (e expr) AddCol(col Expr) Expr {
 	return Field(genericsField[driver.Valuer]{e.setE(clause.Expr{SQL: "? + ?", Vars: []interface{}{e.RawExpr(), col.RawExpr()}})})
