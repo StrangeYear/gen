@@ -74,11 +74,6 @@ func sqlServerJSONPath(path []string) string {
 	return mysqlJSONPath(path)
 }
 
-// NewJSON create new JSON field.
-func NewJSON(table, column string, opts ...Option) JSON {
-	return JSON{genericsField: newGenerics[driver.Valuer](expr{col: toColumn(table, column, opts...)})}
-}
-
 // Eq judge equal after converting ordinary Go values to JSON.
 func (field JSON) Eq(value interface{}) Expr {
 	return expr{e: clause.Eq{Column: field.RawExpr(), Value: jsonValue(value)}}

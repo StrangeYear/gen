@@ -3,10 +3,11 @@ package field
 import (
 	"database/sql/driver"
 	"fmt"
+	"strings"
+
 	"golang.org/x/exp/constraints"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"strings"
 )
 
 var (
@@ -159,6 +160,16 @@ func NewBool(table, column string, opts ...Option) Bool {
 // NewTime ...
 func NewTime(table, column string, opts ...Option) Time {
 	return newTime(expr{col: toColumn(table, column, opts...)})
+}
+
+// NewJSONB create new PostgreSQL jsonb field.
+func NewJSONB(table, column string, opts ...Option) JSONB {
+	return JSONB{genericsField: newGenerics[driver.Valuer](expr{col: toColumn(table, column, opts...)})}
+}
+
+// NewJSON create new JSON field.
+func NewJSON(table, column string, opts ...Option) JSON {
+	return JSON{genericsField: newGenerics[driver.Valuer](expr{col: toColumn(table, column, opts...)})}
 }
 
 func toColumn(table, column string, opts ...Option) clause.Column {

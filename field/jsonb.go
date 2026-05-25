@@ -110,11 +110,6 @@ func (e jsonbArrayPathExpr) Build(builder clause.Builder) {
 	builder.WriteByte(']')
 }
 
-// NewJSONB create new PostgreSQL jsonb field.
-func NewJSONB(table, column string, opts ...Option) JSONB {
-	return JSONB{genericsField: newGenerics[driver.Valuer](expr{col: toColumn(table, column, opts...)})}
-}
-
 func jsonValue(value interface{}) interface{} {
 	if value == nil {
 		return nil
