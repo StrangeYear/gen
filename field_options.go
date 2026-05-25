@@ -273,14 +273,15 @@ var (
 		}
 
 		return func(*model.Field) *model.Field {
+			relation := field.NewRelationWithType(
+				relationship, fieldName, table.StructInfo.Package+"."+table.StructInfo.Type,
+				table.Relations()...)
 			return &model.Field{
-				Name:    fieldName,
-				Type:    config.RelateFieldPrefix(relationship) + table.StructInfo.Type,
-				Tag:     config.GetTag(fieldName),
-				GORMTag: config.GORMTag,
-				Relation: field.NewRelationWithType(
-					relationship, fieldName, table.StructInfo.Package+"."+table.StructInfo.Type,
-					table.Relations()...),
+				Name:     fieldName,
+				Type:     config.RelateFieldPrefix(relationship) + table.StructInfo.Type,
+				Tag:      config.GetTag(fieldName),
+				GORMTag:  config.GORMTag,
+				Relation: config.ApplyConditional(relation),
 			}
 		}
 	}
@@ -297,13 +298,30 @@ var (
 		}
 
 		return func(*model.Field) *model.Field {
+			relation := field.NewRelationWithModel(relationship, fieldName, fieldType, relModel)
 			return &model.Field{
 				Name:     fieldName,
 				Type:     config.RelateFieldPrefix(relationship) + fieldType,
 				GORMTag:  config.GORMTag,
 				Tag:      config.GetTag(fieldName),
-				Relation: field.NewRelationWithModel(relationship, fieldName, fieldType, relModel),
+				Relation: config.ApplyConditional(relation),
 			}
+		}
+	}
+
+	// FieldConditionalRelate marks relation fields to preload only for parent rows matching discriminator values.
+	FieldConditionalRelate = func(discriminatorField string, valueToRelation map[interface{}]string) model.ModifyFieldOpt {
+		return func(m *model.Field) *model.Field {
+			if m == nil || !m.IsRelation() {
+				return m
+			}
+			for value, relationName := range valueToRelation {
+				if m.Relation.Name() == relationName {
+					m.Relation = m.Relation.WithConditional(discriminatorField, value)
+					return m
+				}
+			}
+			return m
 		}
 	}
 

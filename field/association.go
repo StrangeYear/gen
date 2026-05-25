@@ -2,6 +2,8 @@ package field
 
 import (
 	"fmt"
+	"reflect"
+	"strconv"
 	"strings"
 
 	"gorm.io/gorm"
@@ -38,6 +40,7 @@ var ns = schema.NamingStrategy{}
 type RelationField interface {
 	Name() string
 	Path() string
+	Conditional() *ConditionalRelation
 	// Field return expr for Select
 	// Field() return "<self>" field name in struct
 	// Field("RelateField") return "<self>.RelateField" for Select
@@ -78,10 +81,11 @@ type RelationJoin struct {
 type Relation struct {
 	relationship RelationshipType
 
-	fieldName  string
-	fieldType  string
-	fieldPath  string
-	fieldModel interface{} // store relaiton model
+	fieldName   string
+	fieldType   string
+	fieldPath   string
+	fieldModel  interface{} // store relaiton model
+	conditional *ConditionalRelation
 
 	childRelations []Relation
 
@@ -94,17 +98,43 @@ type Relation struct {
 	joins         []RelationJoin
 }
 
+// ConditionalRelation describes when a relation applies to a parent row.
+type ConditionalRelation struct {
+	Field string
+	Value interface{}
+}
+
+// NewConditionalRelation creates conditional preload metadata for a relation.
+func NewConditionalRelation(field string, value interface{}) *ConditionalRelation {
+	return &ConditionalRelation{
+		Field: field,
+		Value: value,
+	}
+}
+
 // Name relation field' name
 func (r Relation) Name() string { return r.fieldName }
 
 // Path relation field's path
 func (r Relation) Path() string { return r.fieldPath }
 
+// Conditional returns conditional preload metadata.
+func (r Relation) Conditional() *ConditionalRelation { return r.conditional }
+
 // Type relation field's type
 func (r Relation) Type() string { return r.fieldType }
 
 // Model relation field's model
 func (r Relation) Model() interface{} { return r.fieldModel }
+
+// WithConditional marks relation to preload only for matched parent rows.
+func (r Relation) WithConditional(discriminatorField string, discriminatorValue interface{}) *Relation {
+	r.conditional = &ConditionalRelation{
+		Field: discriminatorField,
+		Value: discriminatorValue,
+	}
+	return &r
+}
 
 // Relationship relationship between field and table struct
 func (r Relation) Relationship() RelationshipType { return r.relationship }
@@ -237,12 +267,44 @@ func (r *Relation) StructField() (fieldStr string) {
 
 // StructFieldInit return field initialize code
 func (r *Relation) StructFieldInit() string {
-	initStr := fmt.Sprintf("RelationField: field.NewRelation(%q, %q),\n", r.fieldPath, r.fieldType)
+	initStr := fmt.Sprintf("RelationField: %s,\n", r.structFieldRelationInit())
 	for _, relation := range r.childRelations {
 		initStr += relation.fieldName + ": struct {\nfield.RelationField\n" + strings.TrimSpace(relation.StructField()) + "}"
 		initStr += "{\n" + relation.StructFieldInit() + "},\n"
 	}
 	return initStr
+}
+
+func (r *Relation) structFieldRelationInit() string {
+	initStr := fmt.Sprintf("field.NewRelation(%q, %q)", r.fieldPath, r.fieldType)
+	if r.conditional != nil {
+		initStr += fmt.Sprintf(".WithConditional(%q, %s)", r.conditional.Field, formatConditionalValue(r.conditional.Value))
+	}
+	return initStr
+}
+
+func formatConditionalValue(value interface{}) string {
+	if value == nil {
+		return "nil"
+	}
+
+	v := reflect.ValueOf(value)
+	switch v.Kind() {
+	case reflect.String:
+		return strconv.Quote(v.String())
+	case reflect.Bool:
+		return strconv.FormatBool(v.Bool())
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return strconv.FormatInt(v.Int(), 10)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return strconv.FormatUint(v.Uint(), 10)
+	case reflect.Float32:
+		return strconv.FormatFloat(v.Float(), 'g', -1, 32)
+	case reflect.Float64:
+		return strconv.FormatFloat(v.Float(), 'g', -1, 64)
+	default:
+		return fmt.Sprintf("%#v", value)
+	}
 }
 
 func wrapPath(root string, rs []Relation) []Relation {
@@ -272,6 +334,16 @@ type RelateConfig struct {
 	GORMTag      GormTag
 	Tag          Tag
 	OverwriteTag Tag
+
+	Conditional *ConditionalRelation
+}
+
+// ApplyConditional applies conditional metadata to a relation.
+func (c *RelateConfig) ApplyConditional(relation *Relation) *Relation {
+	if c == nil || c.Conditional == nil || relation == nil {
+		return relation
+	}
+	return relation.WithConditional(c.Conditional.Field, c.Conditional.Value)
 }
 
 // RelateFieldPrefix return generated relation field's type

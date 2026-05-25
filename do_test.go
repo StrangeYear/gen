@@ -25,6 +25,30 @@ var (
 	deleteClauses = []string{"DELETE", "FROM", "WHERE"}
 )
 
+type conditionalPreloadEvent struct {
+	ID            string `gorm:"primaryKey"`
+	TargetID      string
+	TargetKind    string
+	EmailTarget   *conditionalEmailTarget   `gorm:"foreignKey:TargetID"`
+	SMSTarget     *conditionalSMSTarget     `gorm:"foreignKey:TargetID"`
+	WebhookTarget *conditionalWebhookTarget `gorm:"foreignKey:TargetID"`
+}
+
+type conditionalEmailTarget struct {
+	ID   string `gorm:"primaryKey"`
+	Name string
+}
+
+type conditionalSMSTarget struct {
+	ID   string `gorm:"primaryKey"`
+	Name string
+}
+
+type conditionalWebhookTarget struct {
+	ID   string `gorm:"primaryKey"`
+	Name string
+}
+
 type stmtOpt func(*gorm.Statement) *gorm.Statement
 
 var (
@@ -431,6 +455,7 @@ func TestDO_methods(t *testing.T) {
 
 type captureLogger struct {
 	lastSQL string
+	sqls    []string
 }
 
 func (l *captureLogger) LogMode(level logger.LogLevel) logger.Interface { return l }
@@ -443,6 +468,7 @@ func (l *captureLogger) Error(ctx context.Context, s string, args ...interface{}
 func (l *captureLogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
 	sql, _ := fc()
 	l.lastSQL = sql
+	l.sqls = append(l.sqls, sql)
 }
 
 type updateColumnSimpleModel struct {
@@ -571,5 +597,131 @@ func TestPostgresSelectVarBind(t *testing.T) {
 	expect := `SELECT "balance"-$1,"score"-$2 FROM "user"`
 	if l.lastSQL != expect {
 		t.Fatalf("expect %s, got %s", expect, l.lastSQL)
+	}
+}
+
+func TestConditionalPreloadUsesMatchedParentSubset(t *testing.T) {
+	db, err := gorm.Open(tests.DummyDialector{}, &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	events := []*conditionalPreloadEvent{
+		{ID: "r1", TargetID: "email-1", TargetKind: "email"},
+		{ID: "r2", TargetID: "email-2", TargetKind: "email"},
+		{ID: "r3", TargetID: "sms-1", TargetKind: "sms"},
+		{ID: "r4", TargetID: "webhook-1", TargetKind: "webhook"},
+		{ID: "r5", TargetID: "webhook-2", TargetKind: "webhook"},
+	}
+
+	var d DO
+	d.UseDB(db)
+	d.UseModel(conditionalPreloadEvent{})
+
+	assertSubset := func(name, targetKind string, ids ...string) {
+		t.Helper()
+		subset := filterConditionalPreloadDest(d.db, reflect.ValueOf(&events), &field.ConditionalRelation{
+			Field: "TargetKind",
+			Value: targetKind,
+		})
+		if subset.Len() != len(ids) {
+			t.Fatalf("%s subset length: got %d, want %d", name, subset.Len(), len(ids))
+		}
+		for i, id := range ids {
+			event := subset.Index(i).Interface().(*conditionalPreloadEvent)
+			if event.TargetID != id {
+				t.Fatalf("%s subset[%d]: got %s, want %s", name, i, event.TargetID, id)
+			}
+		}
+	}
+
+	assertSubset("email", "email", "email-1", "email-2")
+	assertSubset("sms", "sms", "sms-1")
+	assertSubset("webhook", "webhook", "webhook-1", "webhook-2")
+}
+
+func TestConditionalPreloadGroupsByField(t *testing.T) {
+	db, err := gorm.Open(tests.DummyDialector{}, &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	events := []*conditionalPreloadEvent{
+		{ID: "r1", TargetID: "email-1", TargetKind: "email"},
+		{ID: "r2", TargetID: "email-2", TargetKind: "email"},
+		{ID: "r3", TargetID: "sms-1", TargetKind: "sms"},
+		{ID: "r4", TargetID: "webhook-1", TargetKind: "webhook"},
+		{ID: "r5", TargetID: "webhook-2", TargetKind: "webhook"},
+	}
+
+	var d DO
+	d.UseDB(db)
+	d.UseModel(conditionalPreloadEvent{})
+
+	subsets := buildConditionalPreloadSubsets(d.db, reflect.ValueOf(&events), []preloadSpec{
+		{field: field.NewRelation("EmailTarget", "").WithConditional("TargetKind", "email")},
+		{field: field.NewRelation("SMSTarget", "").WithConditional("TargetKind", "sms")},
+		{field: field.NewRelation("WebhookTarget", "").WithConditional("TargetKind", "webhook")},
+	})
+	if len(subsets) != 3 {
+		t.Fatalf("subset count: got %d, want 3", len(subsets))
+	}
+
+	want := map[string]int{
+		"EmailTarget":   2,
+		"SMSTarget":     1,
+		"WebhookTarget": 2,
+	}
+	for _, subset := range subsets {
+		path := subset.preload.field.Path()
+		if subset.value.Len() != want[path] {
+			t.Fatalf("%s subset length: got %d, want %d", path, subset.value.Len(), want[path])
+		}
+		delete(want, path)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing subsets: %v", want)
+	}
+}
+
+func TestConditionalPreloadSQLUsesMatchedParentIDs(t *testing.T) {
+	l := &captureLogger{}
+	db, err := gorm.Open(tests.DummyDialector{}, &gorm.Config{
+		DryRun: true,
+		Logger: l,
+	})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	events := []*conditionalPreloadEvent{
+		{ID: "r1", TargetID: "email-1", TargetKind: "email"},
+		{ID: "r2", TargetID: "email-2", TargetKind: "email"},
+		{ID: "r3", TargetID: "sms-1", TargetKind: "sms"},
+		{ID: "r4", TargetID: "webhook-1", TargetKind: "webhook"},
+	}
+
+	var d DO
+	d.UseDB(db)
+	d.UseModel(conditionalPreloadEvent{})
+
+	subset := filterConditionalPreloadDest(d.db, reflect.ValueOf(&events), &field.ConditionalRelation{
+		Field: "TargetKind",
+		Value: "email",
+	})
+	if err := runConditionalPreload(d.db, subset, "EmailTarget", nil); err != nil {
+		t.Fatalf("run preload: %v", err)
+	}
+
+	if len(l.sqls) == 0 {
+		t.Fatal("expected preload sql")
+	}
+	sql := l.sqls[len(l.sqls)-1]
+	for _, id := range []string{"email-1", "email-2"} {
+		if !strings.Contains(sql, id) {
+			t.Fatalf("expected sql to contain %s, got %s", id, sql)
+		}
+	}
+	for _, id := range []string{"sms-1", "webhook-1"} {
+		if strings.Contains(sql, id) {
+			t.Fatalf("expected sql not to contain %s, got %s", id, sql)
+		}
 	}
 }

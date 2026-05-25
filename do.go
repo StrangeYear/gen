@@ -5,12 +5,14 @@ import (
 	"database/sql"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/callbacks"
 	"gorm.io/gorm/clause"
 	"gorm.io/gorm/schema"
+	"gorm.io/gorm/utils"
 
 	"gorm.io/gen/field"
 	"gorm.io/gen/helper"
@@ -35,6 +37,26 @@ type DO struct {
 
 	backfillData interface{}
 }
+
+type preloadSpec struct {
+	field field.RelationField
+	args  []interface{}
+}
+
+// conditionalPreloadGroup collects conditional preloads that share the same discriminator field.
+type conditionalPreloadGroup struct {
+	field    string
+	preloads []preloadSpec
+}
+
+// conditionalPreloadSubset is the narrowed parent result set for one conditional relation.
+type conditionalPreloadSubset struct {
+	preload preloadSpec
+	value   reflect.Value
+}
+
+const conditionalPreloadsKey = "gorm:gen:conditional_preloads"
+const conditionalPreloadCallbackName = "gorm:gen:conditional_preload"
 
 func (d DO) getInstance(db *gorm.DB) *DO {
 	d.db = db
@@ -65,10 +87,12 @@ func (d *DO) UseDB(db *gorm.DB, opts ...DOOption) {
 		}
 	}
 	d.DOConfig = config
+	registerConditionalPreloadCallback(db)
 }
 
 // ReplaceDB replace db connection
 func (d *DO) ReplaceDB(db *gorm.DB) {
+	registerConditionalPreloadCallback(db)
 	d.db = db.Session(&gorm.Session{})
 }
 
@@ -100,7 +124,7 @@ func (d *DO) indirect(value interface{}) reflect.Type {
 // UseTable specify table name
 func (d *DO) UseTable(tableName string) {
 	d.db = d.db.Table(tableName).Session(new(gorm.Session))
-	//d.db.Statement.Schema.Table=tableName
+	// d.db.Statement.Schema.Table=tableName
 	d.tableName = tableName
 }
 
@@ -451,8 +475,8 @@ func (d *DO) Joins(field field.RelationField) Dao {
 	}
 	if joins := field.GetJoins(); len(joins) > 0 {
 		args = append(args, func(db *gorm.DB) *gorm.DB {
-			//from := clause.From{Joins: toClauseJoins(joins...)}
-			//from.Joins = append(from.Joins, toClauseJoins(joins...)...)
+			// from := clause.From{Joins: toClauseJoins(joins...)}
+			// from.Joins = append(from.Joins, toClauseJoins(joins...)...)
 			return db.Clauses(clause.From{Joins: toClauseJoins(joins...)})
 		})
 	}
@@ -507,6 +531,23 @@ func (d *DO) Joins(field field.RelationField) Dao {
 
 // Preload ...
 func (d *DO) Preload(field field.RelationField) Dao {
+	args := d.preloadArgs(field)
+	if field.Conditional() != nil {
+		return d.getInstance(d.appendConditionalPreload(d.db, preloadSpec{field: field, args: args}))
+	}
+	return d.getInstance(d.db.Preload(field.Path(), args...))
+}
+
+func (d *DO) appendConditionalPreload(db *gorm.DB, preload preloadSpec) *gorm.DB {
+	var preloads []preloadSpec
+	if value, ok := db.Statement.Settings.Load(conditionalPreloadsKey); ok {
+		preloads, _ = value.([]preloadSpec)
+	}
+	preloads = append(append([]preloadSpec(nil), preloads...), preload)
+	return db.Set(conditionalPreloadsKey, preloads)
+}
+
+func (d *DO) preloadArgs(field field.RelationField) []interface{} {
 	var args []interface{}
 	if joins := field.GetJoins(); len(joins) > 0 {
 		args = append(args, func(db *gorm.DB) *gorm.DB {
@@ -542,7 +583,7 @@ func (d *DO) Preload(field field.RelationField) Dao {
 			return db.Offset(offset).Limit(limit)
 		})
 	}
-	return d.getInstance(d.db.Preload(field.Path(), args...))
+	return args
 }
 
 // UpdateFrom specify update sub query
@@ -858,6 +899,253 @@ func (d *DO) newResultPointer() interface{} {
 
 func (d *DO) newResultSlicePointer() interface{} {
 	return reflect.New(reflect.SliceOf(reflect.PtrTo(d.modelType))).Interface()
+}
+
+func registerConditionalPreloadCallback(db *gorm.DB) {
+	if db == nil {
+		return
+	}
+
+	queryCallback := db.Callback().Query()
+	if queryCallback.Get(conditionalPreloadCallbackName) != nil {
+		return
+	}
+	_ = queryCallback.Before("gorm:preload").Register(conditionalPreloadCallbackName, conditionalPreloadCallback)
+}
+
+// conditionalPreloadCallback runs before GORM's native preload callback.
+// It narrows parent records for conditional relations, then delegates the actual association loading back to GORM.
+func conditionalPreloadCallback(db *gorm.DB) {
+	if db == nil || db.Statement == nil || db.Error != nil {
+		return
+	}
+
+	value, ok := db.Statement.Settings.Load(conditionalPreloadsKey)
+	if !ok {
+		return
+	}
+	db.Statement.Settings.Delete(conditionalPreloadsKey)
+
+	preloads, ok := value.([]preloadSpec)
+	if !ok || len(preloads) == 0 {
+		return
+	}
+
+	// Each subset contains only the parent rows that match the relation's discriminator value.
+	for _, subset := range buildConditionalPreloadSubsets(db, db.Statement.ReflectValue, preloads) {
+		if err := runConditionalPreload(db, subset.value, subset.preload.field.Path(), subset.preload.args); err != nil {
+			db.AddError(err)
+			return
+		}
+	}
+}
+
+// buildConditionalPreloadSubsets groups conditional preloads by discriminator field so each field scans the parent results once.
+func buildConditionalPreloadSubsets(db *gorm.DB, value reflect.Value, preloads []preloadSpec) []conditionalPreloadSubset {
+	value = reflect.Indirect(value)
+	if !value.IsValid() {
+		return nil
+	}
+
+	groups := groupConditionalPreloads(preloads)
+	if len(groups) == 0 {
+		return nil
+	}
+
+	var subsets []conditionalPreloadSubset
+	for _, group := range groups {
+		// Reuse GORM's parsed schema field instead of reparsing model metadata.
+		schemaField := lookupConditionalSchemaField(db, group.field)
+		if schemaField == nil {
+			continue
+		}
+		subsets = append(subsets, buildConditionalPreloadGroupSubsets(db, value, schemaField, group.preloads)...)
+	}
+	return subsets
+}
+
+// groupConditionalPreloads preserves preload order while merging relations that use the same discriminator field.
+func groupConditionalPreloads(preloads []preloadSpec) []conditionalPreloadGroup {
+	groupIndexes := map[string]int{}
+	groups := make([]conditionalPreloadGroup, 0, len(preloads))
+	for _, preload := range preloads {
+		conditional := preload.field.Conditional()
+		if conditional == nil {
+			continue
+		}
+
+		idx, ok := groupIndexes[conditional.Field]
+		if !ok {
+			idx = len(groups)
+			groupIndexes[conditional.Field] = idx
+			groups = append(groups, conditionalPreloadGroup{field: conditional.Field})
+		}
+		groups[idx].preloads = append(groups[idx].preloads, preload)
+	}
+	return groups
+}
+
+// buildConditionalPreloadGroupSubsets distributes parent records into relation-specific subsets in one pass.
+func buildConditionalPreloadGroupSubsets(db *gorm.DB, value reflect.Value, schemaField *schema.Field, preloads []preloadSpec) []conditionalPreloadSubset {
+	switch value.Kind() {
+	case reflect.Struct:
+		var subsets []conditionalPreloadSubset
+		for _, preload := range preloads {
+			if matchConditionalValue(db, value, schemaField, preload.field.Conditional().Value) {
+				subsets = append(subsets, conditionalPreloadSubset{preload: preload, value: value})
+			}
+		}
+		return subsets
+	case reflect.Slice, reflect.Array:
+		subsets := make([]conditionalPreloadSubset, len(preloads))
+		for i, preload := range preloads {
+			subsets[i] = conditionalPreloadSubset{
+				preload: preload,
+				value:   newConditionalPreloadSlice(value),
+			}
+		}
+
+		for i := 0; i < value.Len(); i++ {
+			item := value.Index(i)
+			structValue := reflect.Indirect(item)
+			if !structValue.IsValid() || structValue.Kind() != reflect.Struct {
+				continue
+			}
+			// A row can match more than one relation when users intentionally configure overlapping values.
+			for j := range subsets {
+				if matchConditionalValue(db, structValue, schemaField, subsets[j].preload.field.Conditional().Value) {
+					subsets[j].value = reflect.Append(subsets[j].value, conditionalPreloadSliceItem(item))
+				}
+			}
+		}
+		return compactConditionalPreloadSubsets(subsets)
+	default:
+		return nil
+	}
+}
+
+// newConditionalPreloadSlice creates a parent slice suitable for GORM preload and preserves addressability when possible.
+func newConditionalPreloadSlice(value reflect.Value) reflect.Value {
+	elemType := value.Type().Elem()
+	if elemType.Kind() == reflect.Ptr {
+		return reflect.MakeSlice(value.Type(), 0, value.Len())
+	}
+	if value.Len() > 0 && !value.Index(0).CanAddr() {
+		return reflect.MakeSlice(reflect.SliceOf(elemType), 0, value.Len())
+	}
+	return reflect.MakeSlice(reflect.SliceOf(reflect.PtrTo(elemType)), 0, value.Len())
+}
+
+// conditionalPreloadSliceItem keeps pointer items as-is and converts addressable values to pointers for write-back.
+func conditionalPreloadSliceItem(item reflect.Value) reflect.Value {
+	if item.Kind() == reflect.Ptr {
+		return item
+	}
+	if item.CanAddr() {
+		return item.Addr()
+	}
+	return item
+}
+
+// compactConditionalPreloadSubsets drops empty relation subsets to avoid unnecessary association queries.
+func compactConditionalPreloadSubsets(subsets []conditionalPreloadSubset) []conditionalPreloadSubset {
+	result := subsets[:0]
+	for _, subset := range subsets {
+		if subset.value.IsValid() && subset.value.Len() > 0 {
+			result = append(result, subset)
+		}
+	}
+	return result
+}
+
+// filterConditionalPreloadDest keeps the old single-condition helper available for focused tests.
+func filterConditionalPreloadDest(db *gorm.DB, value reflect.Value, conditional *field.ConditionalRelation) reflect.Value {
+	if conditional == nil {
+		return reflect.Value{}
+	}
+	subsets := buildConditionalPreloadSubsets(db, value, []preloadSpec{
+		{field: field.NewRelation("", "").WithConditional(conditional.Field, conditional.Value)},
+	})
+	if len(subsets) == 0 {
+		return reflect.Value{}
+	}
+	return subsets[0].value
+}
+
+// lookupConditionalSchemaField finds the discriminator field from GORM's current statement schema.
+func lookupConditionalSchemaField(db *gorm.DB, fieldName string) *schema.Field {
+	if db == nil || db.Statement == nil || db.Statement.Schema == nil || fieldName == "" {
+		return nil
+	}
+	return db.Statement.Schema.LookUpField(fieldName)
+}
+
+// matchConditionalValue compares discriminator values while tolerating enum aliases and primitive type differences.
+func matchConditionalValue(db *gorm.DB, structValue reflect.Value, schemaField *schema.Field, expectValue interface{}) bool {
+	value, _ := schemaField.ValueOf(db.Statement.Context, structValue)
+	if value == nil {
+		return expectValue == nil
+	}
+	return utils.AssertEqual(value, expectValue) ||
+		conditionalValueString(value) == conditionalValueString(expectValue)
+}
+
+// conditionalValueString normalizes common primitive values for enum-friendly comparison.
+func conditionalValueString(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+
+	v := reflect.ValueOf(value)
+	switch v.Kind() {
+	case reflect.String:
+		return v.String()
+	case reflect.Bool:
+		return strconv.FormatBool(v.Bool())
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return strconv.FormatInt(v.Int(), 10)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return strconv.FormatUint(v.Uint(), 10)
+	case reflect.Float32:
+		return strconv.FormatFloat(v.Float(), 'g', -1, 32)
+	case reflect.Float64:
+		return strconv.FormatFloat(v.Float(), 'g', -1, 64)
+	default:
+		return fmt.Sprint(value)
+	}
+}
+
+// runConditionalPreload delegates association loading to GORM using only the matched parent subset.
+func runConditionalPreload(parentDB *gorm.DB, subset reflect.Value, path string, args []interface{}) error {
+	preloadDest := subset.Interface()
+	if subset.Kind() == reflect.Struct {
+		preloadDest = subset.Addr().Interface()
+	}
+
+	tx := parentDB.Session(&gorm.Session{
+		Context:   parentDB.Statement.Context,
+		NewDB:     true,
+		SkipHooks: parentDB.Statement.SkipHooks,
+	})
+	if err := tx.Statement.Parse(preloadDest); err != nil {
+		return err
+	}
+	tx.Statement.Dest = preloadDest
+	tx.Statement.ReflectValue = reflect.Indirect(reflect.ValueOf(preloadDest))
+	tx.Statement.Unscoped = parentDB.Statement.Unscoped
+	tx.Statement.Preloads = map[string][]interface{}{path: args}
+	parentDB.Statement.Settings.Range(func(k, v interface{}) bool {
+		// Do not copy the marker into the nested preload statement.
+		if k == conditionalPreloadsKey {
+			return true
+		}
+		tx.Statement.Settings.Store(k, v)
+		return true
+	})
+
+	// Let GORM build relation metadata, foreign key values, and the final IN query.
+	callbacks.Preload(tx)
+	return tx.Error
 }
 
 func (d *DO) AddError(err error) error {

@@ -52,6 +52,7 @@ func getFields(db *gorm.DB, conf *model.Config, columns []*model.Column) (fields
 			}
 			m.Type = strings.ReplaceAll(m.Type, conf.ModelPkg+".", "") // remove modelPkg in field's Type, avoid import error
 		}
+		m = modifyField(m, conf.ModifyOpts)
 
 		fields = append(fields, m)
 	}
