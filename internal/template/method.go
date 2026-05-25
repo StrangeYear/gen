@@ -176,8 +176,11 @@ func ({{.S}} {{.QueryStructName}}Do) Last() (*{{.StructInfo.Package}}.{{.StructI
 }
 
 func ({{.S}} {{.QueryStructName}}Do) Find() ([]*{{.StructInfo.Package}}.{{.StructInfo.Type}}, error) {
-	result, err := {{.S}}.DO.Find()
-	return result.([]*{{.StructInfo.Package}}.{{.StructInfo.Type}}), err
+	if result, err := {{.S}}.DO.Find(); err != nil {
+		return nil, err
+	} else {
+		return result.([]*{{.StructInfo.Package}}.{{.StructInfo.Type}}), nil
+	}
 }
 
 func ({{.S}} {{.QueryStructName}}Do) FindInBatch(batchSize int, fc func(tx gen.Dao, batch int) error) (results []*{{.StructInfo.Package}}.{{.StructInfo.Type}}, err error) {
