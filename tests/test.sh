@@ -53,5 +53,11 @@ for dialect in "${dialects[@]}" ; do
         cd ..
       fi
     fi
+
+    # Go skips dot-prefixed directories when expanding ./.... Run these generated
+    # transaction contracts explicitly for default, interface, generic and no-context modes.
+    go -C tests test -race -count=1 -run '^Test_Transaction' \
+      ./.gen/dal_2/query ./.gen/dal_3/query \
+      ./.gen/dal_context_generic/query ./.gen/dal_without_context/query
   fi
 done
