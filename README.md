@@ -19,6 +19,19 @@ Friendly & Safer GORM powered by Code Generation.
 
 ## Documentation
 
+### Transaction context in this fork
+
+After regenerating queries, pass the caller's context to `q.Transaction(ctx, callback, opts...)`
+and `q.Begin(ctx, opts...)`. The context covers waiting for a connection, beginning the
+transaction, and the cloned model DAOs. Cloning preserves each DAO's model and options
+without changing the shared query. Already-cancelled contexts do not invoke transaction callbacks.
+
+With `gen.WithoutContext` enabled, the signatures stay `q.Transaction(callback, opts...)`
+and `q.Begin(opts...)`, with no context parameter. They inherit the underlying database context.
+
+`q.WithContext(ctx)` continues to return the model-query context wrapper; it does not
+provide transaction methods.
+
 - Gen Guides (official site): https://gorm.io/gen/index.html
 - GORM Guides: https://gorm.io/docs
 

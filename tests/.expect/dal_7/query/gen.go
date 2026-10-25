@@ -74,12 +74,15 @@ func (q *Query) WithContext(ctx context.Context) *queryCtx {
 	}
 }
 
-func (q *Query) Transaction(fc func(tx *Query) error, opts ...*sql.TxOptions) error {
-	return q.db.Transaction(func(tx *gorm.DB) error { return fc(q.clone(tx)) }, opts...)
+func (q *Query) Transaction(ctx context.Context, fc func(tx *Query) error, opts ...*sql.TxOptions) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return q.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return fc(q.clone(tx)) }, opts...)
 }
 
-func (q *Query) Begin(opts ...*sql.TxOptions) *QueryTx {
-	tx := q.db.Begin(opts...)
+func (q *Query) Begin(ctx context.Context, opts ...*sql.TxOptions) *QueryTx {
+	tx := q.db.WithContext(ctx).Begin(opts...)
 	return &QueryTx{Query: q.clone(tx), Error: tx.Error}
 }
 

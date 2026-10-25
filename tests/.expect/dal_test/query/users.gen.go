@@ -41,6 +41,11 @@ func newUser(db *gorm.DB, opts ...gen.DOOption) user {
 	return _user
 }
 
+/*
+user table multiline /*comment* /
+line1
+line2
+*/
 type user struct {
 	userDo userDo
 
@@ -51,9 +56,13 @@ type user struct {
 	Address      field.String
 	RegisterTime field.Time
 	/*
-		multiline
+		column multiline /*comment* /
 		line1
 		line2
+		colon:colon
+		semicolon:semicolon
+		"quotation mark"
+		`accent`
 	*/
 	Alive      field.Bool
 	CompanyID  field.Int64
@@ -119,6 +128,7 @@ func (u *user) fillFieldMap() {
 
 func (u user) clone(db *gorm.DB) user {
 	u.userDo.ReplaceConnPool(db.Statement.ConnPool)
+	u.userDo.DO = *u.userDo.DO.WithContext(db.Statement.Context).(*gen.DO)
 	return u
 }
 
@@ -266,8 +276,11 @@ func (u userDo) Last() (*model.User, error) {
 }
 
 func (u userDo) Find() ([]*model.User, error) {
-	result, err := u.DO.Find()
-	return result.([]*model.User), err
+	if result, err := u.DO.Find(); err != nil {
+		return nil, err
+	} else {
+		return result.([]*model.User), nil
+	}
 }
 
 func (u userDo) FindInBatch(batchSize int, fc func(tx gen.Dao, batch int) error) (results []*model.User, err error) {

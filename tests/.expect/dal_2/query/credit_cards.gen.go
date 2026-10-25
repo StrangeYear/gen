@@ -112,6 +112,7 @@ func (c *creditCard) fillFieldMap() {
 
 func (c creditCard) clone(db *gorm.DB) creditCard {
 	c.creditCardDo.ReplaceConnPool(db.Statement.ConnPool)
+	c.creditCardDo.DO = *c.creditCardDo.DO.WithContext(db.Statement.Context).(*gen.DO)
 	return c
 }
 
@@ -259,8 +260,11 @@ func (c creditCardDo) Last() (*model.CreditCard, error) {
 }
 
 func (c creditCardDo) Find() ([]*model.CreditCard, error) {
-	result, err := c.DO.Find()
-	return result.([]*model.CreditCard), err
+	if result, err := c.DO.Find(); err != nil {
+		return nil, err
+	} else {
+		return result.([]*model.CreditCard), nil
+	}
 }
 
 func (c creditCardDo) FindInBatch(batchSize int, fc func(tx gen.Dao, batch int) error) (results []*model.CreditCard, err error) {

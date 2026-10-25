@@ -12,7 +12,7 @@ func TestQuery_Transaction_Relation(t *testing.T) {
 	useOnce.Do(CRUDInit)
 
 	t.Run("transaction has many", func(t *testing.T) {
-		if err := query.Q.Transaction(func(tx *query.Query) error {
+		if err := query.Q.Transaction(ctx, func(tx *query.Query) error {
 			c := tx.Customer
 			customer := &model.Customer{
 				Bank: model.Bank{
@@ -67,7 +67,7 @@ func TestQuery_Transaction_Relation(t *testing.T) {
 	})
 
 	t.Run("transaction has one", func(t *testing.T) {
-		if err := query.Q.Transaction(func(tx *query.Query) error {
+		if err := query.Q.Transaction(ctx, func(tx *query.Query) error {
 			c := tx.Customer
 			customer := &model.Customer{
 				Bank: model.Bank{

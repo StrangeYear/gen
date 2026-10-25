@@ -128,6 +128,7 @@ func (u *user) fillFieldMap() {
 
 func (u user) clone(db *gorm.DB) user {
 	u.userDo.ReplaceConnPool(db.Statement.ConnPool)
+	u.userDo.DO = *u.userDo.DO.WithContext(db.Statement.Context).(*gen.DO)
 	return u
 }
 
@@ -275,8 +276,11 @@ func (u userDo) Last() (*model.User, error) {
 }
 
 func (u userDo) Find() ([]*model.User, error) {
-	result, err := u.DO.Find()
-	return result.([]*model.User), err
+	if result, err := u.DO.Find(); err != nil {
+		return nil, err
+	} else {
+		return result.([]*model.User), nil
+	}
 }
 
 func (u userDo) FindInBatch(batchSize int, fc func(tx gen.Dao, batch int) error) (results []*model.User, err error) {

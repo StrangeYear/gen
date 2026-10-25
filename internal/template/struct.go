@@ -118,7 +118,8 @@ func ({{.S}} *{{.QueryStructName}}) updateTableName(table string) *{{.QueryStruc
 
 	cloneMethod = `
 func ({{.S}} {{.QueryStructName}}) clone(db *gorm.DB) {{.QueryStructName}} {
-	{{.S}}.{{.QueryStructName}}Do.ReplaceConnPool(db.Statement.ConnPool){{range .Fields }}{{if .IsRelation}}
+	{{.S}}.{{.QueryStructName}}Do.ReplaceConnPool(db.Statement.ConnPool)
+	{{.S}}.{{.QueryStructName}}Do.DO = *{{.S}}.{{.QueryStructName}}Do.DO.WithContext(db.Statement.Context).(*gen.DO){{range .Fields }}{{if .IsRelation}}
   {{$.S}}.{{.Relation.Name}}.db = db.Session(&gorm.Session{Initialized: true})
   {{$.S}}.{{.Relation.Name}}.db.Statement.ConnPool = db.Statement.ConnPool{{end}}{{end}}
 	return {{.S}}

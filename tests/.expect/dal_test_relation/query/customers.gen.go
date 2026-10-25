@@ -112,10 +112,12 @@ func (c *customer) fillFieldMap() {
 	c.fieldMap["updated_at"] = c.UpdatedAt
 	c.fieldMap["deleted_at"] = c.DeletedAt
 	c.fieldMap["bank_id"] = c.BankID
+
 }
 
 func (c customer) clone(db *gorm.DB) customer {
 	c.customerDo.ReplaceConnPool(db.Statement.ConnPool)
+	c.customerDo.DO = *c.customerDo.DO.WithContext(db.Statement.Context).(*gen.DO)
 	c.Bank.db = db.Session(&gorm.Session{Initialized: true})
 	c.Bank.db.Statement.ConnPool = db.Statement.ConnPool
 	c.CreditCards.db = db.Session(&gorm.Session{Initialized: true})
@@ -163,6 +165,11 @@ func (a customerHasOneBank) Model(m *model.Customer) *customerHasOneBankTx {
 	return &customerHasOneBankTx{a.db.Model(m).Association(a.Name())}
 }
 
+func (a customerHasOneBank) Unscoped() *customerHasOneBank {
+	a.db = a.db.Unscoped()
+	return &a
+}
+
 type customerHasOneBankTx struct{ tx *gorm.Association }
 
 func (a customerHasOneBankTx) Find() (result *model.Bank, err error) {
@@ -201,6 +208,11 @@ func (a customerHasOneBankTx) Count() int64 {
 	return a.tx.Count()
 }
 
+func (a customerHasOneBankTx) Unscoped() *customerHasOneBankTx {
+	a.tx = a.tx.Unscoped()
+	return &a
+}
+
 type customerHasManyCreditCards struct {
 	db *gorm.DB
 
@@ -232,6 +244,11 @@ func (a customerHasManyCreditCards) Session(session *gorm.Session) *customerHasM
 
 func (a customerHasManyCreditCards) Model(m *model.Customer) *customerHasManyCreditCardsTx {
 	return &customerHasManyCreditCardsTx{a.db.Model(m).Association(a.Name())}
+}
+
+func (a customerHasManyCreditCards) Unscoped() *customerHasManyCreditCards {
+	a.db = a.db.Unscoped()
+	return &a
 }
 
 type customerHasManyCreditCardsTx struct{ tx *gorm.Association }
@@ -270,6 +287,11 @@ func (a customerHasManyCreditCardsTx) Clear() error {
 
 func (a customerHasManyCreditCardsTx) Count() int64 {
 	return a.tx.Count()
+}
+
+func (a customerHasManyCreditCardsTx) Unscoped() *customerHasManyCreditCardsTx {
+	a.tx = a.tx.Unscoped()
+	return &a
 }
 
 type customerDo struct{ gen.DO }
@@ -411,8 +433,11 @@ func (c customerDo) Last() (*model.Customer, error) {
 }
 
 func (c customerDo) Find() ([]*model.Customer, error) {
-	result, err := c.DO.Find()
-	return result.([]*model.Customer), err
+	if result, err := c.DO.Find(); err != nil {
+		return nil, err
+	} else {
+		return result.([]*model.Customer), nil
+	}
 }
 
 func (c customerDo) FindInBatch(batchSize int, fc func(tx gen.Dao, batch int) error) (results []*model.Customer, err error) {

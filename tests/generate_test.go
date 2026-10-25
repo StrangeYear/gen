@@ -44,6 +44,18 @@ type Comment struct {
 }
 
 var generateCase = map[string]func(dir string) *gen.Generator{
+	generateDirPrefix + "dal_context_generic": func(dir string) *gen.Generator {
+		g := gen.NewGenerator(gen.Config{OutPath: dir + "/query", Mode: gen.WithDefaultQuery | gen.WithGeneric, WithUnitTest: true})
+		g.UseDB(DB)
+		g.ApplyBasic(g.GenerateModel("banks"))
+		return g
+	},
+	generateDirPrefix + "dal_without_context": func(dir string) *gen.Generator {
+		g := gen.NewGenerator(gen.Config{OutPath: dir + "/query", Mode: gen.WithDefaultQuery | gen.WithQueryInterface | gen.WithoutContext, WithUnitTest: true})
+		g.UseDB(DB)
+		g.ApplyBasic(g.GenerateModel("banks"))
+		return g
+	},
 	generateDirPrefix + "dal_1": func(dir string) *gen.Generator {
 		g := gen.NewGenerator(gen.Config{
 			OutPath: dir + "/query",

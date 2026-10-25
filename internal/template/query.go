@@ -81,12 +81,16 @@ func (q *Query) WithContext(ctx context.Context) *queryCtx  {
 	}
 }
 
-func (q *Query) Transaction(fc func(tx *Query) error, opts ...*sql.TxOptions) error {
-	return q.db.Transaction(func(tx *gorm.DB) error { return fc(q.clone(tx)) }, opts...)
+func (q *Query) Transaction({{if not .WithoutContext}}ctx context.Context, {{end}}fc func(tx *Query) error, opts ...*sql.TxOptions) error {
+	{{if not .WithoutContext}}if err := ctx.Err(); err != nil {
+		return err
+	}
+	{{end -}}
+	return q.db{{if not .WithoutContext}}.WithContext(ctx){{end}}.Transaction(func(tx *gorm.DB) error { return fc(q.clone(tx)) }, opts...)
 }
 
-func (q *Query) Begin(opts ...*sql.TxOptions) *QueryTx {
-	tx := q.db.Begin(opts...)
+func (q *Query) Begin({{if not .WithoutContext}}ctx context.Context, {{end}}opts ...*sql.TxOptions) *QueryTx {
+	tx := q.db{{if not .WithoutContext}}.WithContext(ctx){{end}}.Begin(opts...)
 	return &QueryTx{Query: q.clone(tx), Error: tx.Error}
 }
 
@@ -181,12 +185,12 @@ func Test_Transaction(t *testing.T) {
 		t.Errorf("query Use(_gen_test_db) fail: query.Available() == false")
 	}
 
-	err := query.Transaction(func(tx *Query) error { return nil })
+	err := query.Transaction({{if not .WithoutContext}}context.Background(), {{end}}func(tx *Query) error { return nil })
 	if err != nil {
 		t.Errorf("query.Transaction execute fail: %s", err)
 	}
 
-	tx := query.Begin()
+	tx := query.Begin({{if not .WithoutContext}}context.Background(){{end}})
 
 	err = tx.SavePoint("point")
 	if err != nil {
@@ -201,9 +205,102 @@ func Test_Transaction(t *testing.T) {
 		t.Errorf("query tx Commit fail: %s", err)
 	}
 
-	err = query.Begin().Rollback()
+	err = query.Begin({{if not .WithoutContext}}context.Background(){{end}}).Rollback()
 	if err != nil {
 		t.Errorf("query tx Rollback fail: %s", err)
 	}
 }
+
+{{if not .WithoutContext}}
+func Test_TransactionContext(t *testing.T) {
+    q := Use(_gen_test_db)
+    type contextKey struct{}
+    ctx := context.WithValue(context.Background(), contextKey{}, "outer")
+    check := func(tx *Query, want string) error {
+        if tx.db.Statement.Context.Value(contextKey{}) != want {
+            return fmt.Errorf("transaction context not inherited")
+        }
+        for _, db := range []*gorm.DB{
+            {{range $name,$d :=.Data -}}
+            tx.{{$d.ModelStructName}}.{{$d.QueryStructName}}Do.UnderlyingDB(),
+            {{end}}
+        } {
+            if db.Statement.Context.Value(contextKey{}) != want || db.Statement.Model == nil {
+                return fmt.Errorf("DAO context or model lost")
+            }
+        }
+        return nil
+    }
+    err := q.Transaction(ctx, func(tx *Query) error {
+        if err := check(tx, "outer"); err != nil { return err }
+        nested := context.WithValue(ctx, contextKey{}, "nested")
+        rollback := fmt.Errorf("rollback nested transaction")
+        record := &_another{}
+        err := tx.Transaction(nested, func(inner *Query) error {
+            if err := check(inner, "nested"); err != nil { return err }
+            if inner.db.Statement.ConnPool != tx.db.Statement.ConnPool {
+                return fmt.Errorf("nested transaction changed connection")
+            }
+            if err := inner.db.Create(record).Error; err != nil { return err }
+            return rollback
+        })
+        if err != rollback { return fmt.Errorf("nested rollback: %v", err) }
+        var count int64
+        if err := tx.db.Model(&_another{}).Where("id = ?", record.ID).Count(&count).Error; err != nil { return err }
+        if count != 0 { return fmt.Errorf("nested write survived rollback") }
+        return check(tx, "outer")
+    })
+    if err != nil { t.Fatal(err) }
+    if q.db.Statement.Context.Value(contextKey{}) != nil { t.Fatal("shared query context changed") }
+    {{range $name,$d :=.Data -}}
+    if q.{{$d.ModelStructName}}.{{$d.QueryStructName}}Do.UnderlyingDB().Statement.Context.Value(contextKey{}) != nil {
+        t.Fatal("shared DAO context changed")
+    }
+    {{end}}
+    tx := q.Begin(ctx)
+    if tx.Error != nil { t.Fatal(tx.Error) }
+    defer tx.Rollback()
+    if err := check(tx.Query, "outer"); err != nil { t.Fatal(err) }
+    cancelled, cancel := context.WithCancel(ctx)
+    cancel()
+    if err := tx.Transaction(cancelled, func(*Query) error { t.Error("cancelled callback ran"); return nil }); err == nil {
+        t.Fatal("cancelled nested transaction succeeded")
+    }
+}
+
+func Test_TransactionContextPoolWait(t *testing.T) {
+    q := Use(_gen_test_db)
+    pool, err := _gen_test_db.DB()
+    if err != nil { t.Fatal(err) }
+    maxOpen := pool.Stats().MaxOpenConnections
+    pool.SetMaxOpenConns(1)
+    defer pool.SetMaxOpenConns(maxOpen)
+    held, err := pool.Conn(context.Background())
+    if err != nil { t.Fatal(err) }
+    defer held.Close()
+    for _, begin := range []bool{false, true} {
+        ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+        done := make(chan error, 1)
+        go func() {
+            if begin {
+                tx := q.Begin(ctx)
+                if tx.Error == nil { tx.Rollback() }
+                done <- tx.Error
+            } else {
+                done <- q.Transaction(ctx, func(*Query) error { return fmt.Errorf("unexpected callback") })
+            }
+        }()
+        select {
+        case err := <-done:
+            if err != context.DeadlineExceeded { t.Errorf("pool wait error = %v", err) }
+        case <-time.After(2*time.Second):
+            cancel()
+            t.Fatal("transaction ignored deadline while waiting for connection")
+        }
+        cancel()
+    }
+}
+
+{{end}}
+
 `

@@ -350,7 +350,11 @@ func (g *Generator) generateQueryFile() (err error) {
 	case <-pool.AsyncWaitAll():
 	}
 
-	genForRoot := *g
+	queryGenerator := *g
+	genForRoot := struct {
+		*Generator
+		WithoutContext bool
+	}{&queryGenerator, g.judgeMode(WithoutContext)}
 	if g.MergeQuery {
 		mergedTables, dataForGenGo := g.buildMergedQueryData(manifest)
 		manifest.Tables = mergedTables

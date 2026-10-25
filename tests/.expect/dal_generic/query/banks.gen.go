@@ -96,6 +96,7 @@ func (b *bank) fillFieldMap() {
 
 func (b bank) clone(db *gorm.DB) bank {
 	b.bankDo.ReplaceConnPool(db.Statement.ConnPool)
+	b.bankDo.DO = *b.bankDo.DO.WithContext(db.Statement.Context).(*gen.DO)
 	return b
 }
 

@@ -131,6 +131,7 @@ func (u *user) fillFieldMap() {
 
 func (u user) clone(db *gorm.DB) user {
 	u.userDo.ReplaceConnPool(db.Statement.ConnPool)
+	u.userDo.DO = *u.userDo.DO.WithContext(db.Statement.Context).(*gen.DO)
 	return u
 }
 
