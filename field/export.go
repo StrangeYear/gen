@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"golang.org/x/exp/constraints"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -15,6 +16,9 @@ var (
 	Star = NewAsterisk("")
 	// ALL same with Star
 	ALL = Star
+
+	// NULL represents the raw SQL NULL literal.
+	NULL = Field{expr: expr{col: clause.Column{Name: "NULL", Raw: true}}}
 )
 
 // ScanValuer interface for Field
@@ -49,9 +53,14 @@ func NewUnsafeFieldRaw(rawSQL string, vars ...interface{}) Field {
 	return Field{expr: expr{e: clause.Expr{SQL: rawSQL, Vars: vars}}}
 }
 
-// NewSerializer create new field2
+// NewSerializer creates a field for values that implement GORM's serializer interface.
 func NewSerializer(table, column string, opts ...Option) Serializer {
 	return Serializer{expr: expr{col: toColumn(table, column, opts...)}}
+}
+
+// NewSerializerField creates a typed field whose values use a GORM serializer.
+func NewSerializerField[T any](table, column string, opts ...Option) SerializerField[T] {
+	return SerializerField[T]{expr: expr{col: toColumn(table, column, opts...)}}
 }
 
 // NewAsterisk create new * field
@@ -66,6 +75,7 @@ func NewNumber[T constraints.Integer | constraints.Float](table, column string, 
 	return newNumber[T](expr{col: toColumn(table, column, opts...)})
 }
 
+// NewValuerNumber creates a numeric field whose values implement driver.Valuer.
 func NewValuerNumber[T driver.Valuer](table, column string, opts ...Option) ValuerNumber[T] {
 	return newValuerNumber[T](expr{col: toColumn(table, column, opts...)})
 }

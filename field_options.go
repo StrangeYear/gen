@@ -21,12 +21,15 @@ type Field = *model.Field
 var ns = schema.NamingStrategy{}
 
 var (
+	// FieldModify adapts a function over the public Field alias into a model option.
 	FieldModify = func(opt func(Field) Field) model.ModifyFieldOpt {
 		return func(f *model.Field) *model.Field {
 			return opt(f)
 		}
 	}
 
+	// FieldFilter adapts a predicate-like field transform into a model filter option.
+	// Returning nil from opt removes the field from generated models.
 	FieldFilter = func(opt func(Field) Field) model.FilterFieldOpt {
 		return func(f *model.Field) *model.Field {
 			return opt(f)
@@ -80,11 +83,18 @@ var (
 	// FieldNew add new field (any type your want)
 	FieldNew = func(fieldName, fieldType string, fieldTag field.Tag) model.CreateFieldOpt {
 		return func(*model.Field) *model.Field {
-			return &model.Field{
+			f := &model.Field{
 				Name: fieldName,
 				Type: fieldType,
 				Tag:  fieldTag,
 			}
+			if gormTag, ok := fieldTag[field.TagKeyGorm]; ok {
+				settings := schema.ParseTagSetting(gormTag, ";")
+				if col, ok := settings["COLUMN"]; ok {
+					f.ColumnName = col
+				}
+			}
+			return f
 		}
 	}
 	// FieldIgnore ignore some columns by name
@@ -329,9 +339,16 @@ var (
 	WithMethod = func(methods ...interface{}) model.AddMethodOpt {
 		return func() []interface{} { return methods }
 	}
+
+	// WithTemplate add custom template text for table model
+	WithTemplate = func(templates ...string) model.AddTemplateOpt {
+		return func() []string { return templates }
+	}
 )
 
 var (
+	// DefaultMethodTableWithNamer resolves the default table placeholder through
+	// the supplied naming strategy.
 	DefaultMethodTableWithNamer = (&defaultModel{}).TableName
 )
 

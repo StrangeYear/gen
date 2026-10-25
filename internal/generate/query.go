@@ -14,7 +14,9 @@ import (
 	"gorm.io/gen/internal/parser"
 )
 
+// FieldParser lets a model override the generated field type for schema fields.
 type FieldParser interface {
+	// GetFieldGenType returns the field type name to emit, or an empty string to use automatic mapping.
 	GetFieldGenType(f *schema.Field) string
 }
 
@@ -26,19 +28,21 @@ func (dummyFieldParser) GetFieldGenType(*schema.Field) string { return "" }
 type QueryStructMeta struct {
 	db *gorm.DB
 
-	Generated             bool   // whether to generate db model
-	FileName              string // generated file name
-	S                     string // the first letter(lower case)of simple Name (receiver)
-	QueryStructName       string // internal query struct name
-	ModelStructName       string // origin/model struct name
-	TableName             string // table name in db server
-	MultilineTableComment bool   // indicator that table comment consists of multiple rows
-	TableComment          string // table comment in db server
-	StructInfo            parser.Param
-	Fields                []*model.Field
-	Source                model.SourceCode
-	ImportPkgPaths        []string
-	ModelMethods          []*parser.Method // user custom method bind to db base struct
+	Generated             bool             // whether to generate db model
+	FileName              string           // generated file name
+	S                     string           // the first letter(lower case)of simple Name (receiver)
+	QueryStructName       string           // internal query struct name
+	ModelStructName       string           // origin/model struct name
+	TableName             string           // table name in db server
+	MultilineTableComment bool             // indicator that table comment consists of multiple rows
+	TableComment          string           // table comment in db server
+	StructInfo            parser.Param     // model type and package metadata
+	Fields                []*model.Field   // normalized model and relationship fields
+	Source                model.SourceCode // generated model source, when model generation is enabled
+	// ImportPkgPaths contains additional quoted imports required by generated code.
+	ImportPkgPaths  []string
+	ModelMethods    []*parser.Method // user custom method bind to db base struct
+	CustomTemplates []string         // custom template text
 
 	interfaceMode bool
 
@@ -61,11 +65,16 @@ func (b *QueryStructMeta) parseStruct(st interface{}) error {
 		fp = fps
 	}
 	for _, f := range stmt.Schema.Fields {
+		fieldType := b.getFieldRealType(f.FieldType)
+		customGenType := fp.GetFieldGenType(f)
+		if customGenType == "" && f.Serializer != nil && fieldType != "serializer" {
+			customGenType = fmt.Sprintf("SerializerField[%s]", f.FieldType.String())
+		}
 		gf := &model.Field{
 			Name:          f.Name,
-			Type:          b.getFieldRealType(f.FieldType),
+			Type:          fieldType,
 			ColumnName:    f.DBName,
-			CustomGenType: fp.GetFieldGenType(f),
+			CustomGenType: customGenType,
 			ColumnComment: f.Comment,
 			Tag:           f.TagSettings,
 		}
@@ -145,6 +154,7 @@ func (b *QueryStructMeta) appendOrUpdateField(f *model.Field) {
 
 func (b *QueryStructMeta) appendField(f *model.Field) { b.Fields = append(b.Fields, f) }
 
+// HasUniqueIndex reports whether any field carries a GORM uniqueIndex tag.
 func (b *QueryStructMeta) HasUniqueIndex() bool {
 	for _, f := range b.Fields {
 		if f == nil {
@@ -262,6 +272,11 @@ func (b *QueryStructMeta) addMethodFromAddMethodOpt(methods ...interface{}) *Que
 	if err != nil {
 		b.db.Logger.Warn(context.Background(), err.Error())
 	}
+	return b
+}
+
+func (b *QueryStructMeta) addCustomTemplateFromOpt(templates ...string) *QueryStructMeta {
+	b.CustomTemplates = append(b.CustomTemplates, templates...)
 	return b
 }
 

@@ -9,49 +9,56 @@ import (
 
 // Config model configuration
 type Config struct {
-	ModelPkg    string
-	TablePrefix string
-	TableName   string
-	ModelName   string
+	ModelPkg    string // package name for generated models
+	TablePrefix string // prefix applied to normalized table names that do not already contain it
+	TableName   string // source database table name
+	ModelName   string // requested generated model type name
 
-	ImportPkgPaths []string
-	ModelOpts      []Option
+	ImportPkgPaths []string // additional quoted imports required by generated models
+	ModelOpts      []Option // unsorted field and method options from the public configuration
 
 	NameStrategy
 	FieldConfig
 	MethodConfig
+	TemplateConfig
 }
 
 // NameStrategy name strategy
 type NameStrategy struct {
-	SchemaNameOpts []SchemaNameOpt
+	SchemaNameOpts []SchemaNameOpt // ordered schema resolvers; the first non-empty result wins
 
-	TableNameNS func(tableName string) string
-	ModelNameNS func(tableName string) string
-	FileNameNS  func(tableName string) string
+	TableNameNS func(tableName string) string // maps the source table to its generated table name
+	ModelNameNS func(tableName string) string // maps the source table to a Go model name
+	FileNameNS  func(tableName string) string // maps the source table to a generated file name
 }
 
 // FieldConfig field configuration
 type FieldConfig struct {
-	DataTypeMap map[string]func(columnType gorm.ColumnType) (dataType string)
+	DataTypeMap map[string]func(columnType gorm.ColumnType) (dataType string) // overrides database-to-Go type mappings
 
 	FieldNullable       bool // generate pointer when field is nullable
 	FieldCoverable      bool // generate pointer when field has default value
 	FieldSignable       bool // detect integer field's unsigned type, adjust generated data type
 	FieldWithIndexTag   bool // generate with gorm index tag
 	FieldWithTypeTag    bool // generate with gorm column type tag
-	FieldWithDefaultTag bool
+	FieldWithDefaultTag bool // includes database defaults in generated GORM tags
 
-	FieldJSONTagNS func(columnName string) string
+	FieldJSONTagNS func(columnName string) string // maps database columns to JSON tag values
 
-	ModifyOpts []FieldOption
-	FilterOpts []FieldOption
-	CreateOpts []FieldOption
+	ModifyOpts []FieldOption // transforms existing fields after introspection
+	FilterOpts []FieldOption // removes existing fields after introspection
+	CreateOpts []FieldOption // adds synthetic fields after introspection
 }
 
 // MethodConfig method configuration
 type MethodConfig struct {
+	// MethodOpts contains custom model methods to copy into generated models.
 	MethodOpts []MethodOption
+}
+
+// TemplateConfig custom template configuration
+type TemplateConfig struct {
+	TemplateOpts []TemplateOption
 }
 
 // Preprocess revise invalid field
@@ -61,7 +68,7 @@ func (cfg *Config) Preprocess() *Config {
 	}
 	cfg.ModelPkg = filepath.Base(cfg.ModelPkg)
 
-	cfg.ModifyOpts, cfg.FilterOpts, cfg.CreateOpts, cfg.MethodOpts = sortOptions(cfg.ModelOpts)
+	cfg.ModifyOpts, cfg.FilterOpts, cfg.CreateOpts, cfg.MethodOpts, cfg.TemplateOpts = sortOptions(cfg.ModelOpts)
 
 	return cfg
 }
@@ -97,6 +104,18 @@ func (cfg *Config) GetModelMethods() (methods []interface{}) {
 
 	for _, opt := range cfg.MethodOpts {
 		methods = append(methods, opt.Methods()...)
+	}
+	return
+}
+
+// GetCustomTemplates get diy custom template from option
+func (cfg *Config) GetCustomTemplates() (templates []string) {
+	if cfg == nil {
+		return
+	}
+
+	for _, opt := range cfg.TemplateOpts {
+		templates = append(templates, opt.Templates()...)
 	}
 	return
 }

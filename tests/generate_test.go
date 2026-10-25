@@ -1,26 +1,21 @@
 package tests_test
 
 import (
-	"context"
-	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"testing"
-	"time"
 
 	"gorm.io/gen"
 	"gorm.io/gen/field"
 
 	"gorm.io/gen/tests/diy_method"
+	"gorm.io/gen/tests/internal/golden"
 )
 
 const (
 	generateDirPrefix = ".gen/"
 	expectDirPrefix   = ".expect/"
 )
-
-var _ = os.Setenv("GORM_DIALECT", "mysql")
 
 type User struct {
 	Id       string    `gorm:"primaryKey"`
@@ -235,18 +230,8 @@ func TestGenerate(t *testing.T) {
 func matchGeneratedFile(dir string) error {
 	_ = os.Remove(dir + "/query/gen_test.db")
 
-	ctx, cancel := context.WithTimeout(context.TODO(), 10*time.Second)
-	defer cancel()
-
 	expectDir := expectDirPrefix + strings.TrimPrefix(dir, generateDirPrefix)
-	diffResult, err := exec.CommandContext(ctx, "diff", "-r", expectDir, dir).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("diff %s and %s got: %w\n%s", expectDir, dir, err, diffResult)
-	}
-	if len(diffResult) != 0 {
-		return fmt.Errorf("unexpected content: %s", diffResult)
-	}
-	return nil
+	return golden.CompareDirs(expectDir, dir)
 }
 
 func TestGenerate_expect(t *testing.T) {
@@ -315,6 +300,36 @@ func Test_GenSkipImpl(t *testing.T) {
 	}
 }
 
+func Test_GenUseAny(t *testing.T) {
+	dir := ".gen/use_any_test"
+	os.RemoveAll(dir)
+	g := gen.NewGenerator(gen.Config{
+		OutPath: dir + "/query",
+		Mode:    gen.WithDefaultQuery | gen.WithQueryInterface,
+
+		UseAny: true,
+	})
+	g.UseDB(DB)
+	model := g.GenerateModel("users")
+	g.ApplyInterface(func(diy_method.TrimTest) {}, model)
+	g.Execute()
+
+	content, err := os.ReadFile(dir + "/query/users.gen.go")
+	if err != nil {
+		t.Fatalf("read generated file failed: %v", err)
+	}
+	str := string(content)
+	if strings.Contains(str, "interface{}") {
+		t.Error("should not contain interface{} when UseAny is enabled")
+	}
+	if !strings.Contains(str, "Scan(result any)") {
+		t.Error("should emit any in CRUD method signatures")
+	}
+	if !strings.Contains(str, "map[string]any") {
+		t.Error("should emit map[string]any for gen.M parameters")
+	}
+}
+
 func Test_GenVariadic(t *testing.T) {
 	dir := ".gen/variadic_test"
 	os.RemoveAll(dir)
@@ -335,5 +350,35 @@ func Test_GenVariadic(t *testing.T) {
 	str := string(content)
 	if !strings.Contains(str, "VariadicMethod(ids ...int)") {
 		t.Error("should generate VariadicMethod implementation")
+	}
+}
+
+func Test_GenWithTemplate(t *testing.T) {
+	dir := ".gen/with_template_test"
+	os.RemoveAll(dir)
+	g := gen.NewGenerator(gen.Config{
+		OutPath: dir + "/query",
+		Mode:    gen.WithDefaultQuery,
+	})
+	g.UseDB(DB)
+	g.ApplyBasic(g.GenerateModel("users", gen.WithTemplate(`
+// CustomHello says hello for {{.ModelStructName}}
+func ({{.S}} *{{.ModelStructName}}) CustomHello() string {
+	return "hello from {{.ModelStructName}}"
+}
+`)))
+	g.Execute()
+
+	modelFile := dir + "/model/users.gen.go"
+	content, err := os.ReadFile(modelFile)
+	if err != nil {
+		t.Fatalf("read generated file failed: %v", err)
+	}
+	str := string(content)
+	if !strings.Contains(str, "func (u *User) CustomHello() string {") {
+		t.Error("should render custom template into generated model file")
+	}
+	if !strings.Contains(str, `return "hello from User"`) {
+		t.Error("should render template data (ModelStructName) into custom template")
 	}
 }

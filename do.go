@@ -20,8 +20,10 @@ import (
 
 // ResultInfo query/execute info
 type ResultInfo struct {
+	// RowsAffected is the row count reported by the callback's final GORM statement.
 	RowsAffected int64
-	Error        error
+	// Error is the last error recorded by the underlying GORM statement.
+	Error error
 }
 
 var _ Dao = new(DO)
@@ -216,8 +218,6 @@ func (d *DO) Alias() string { return d.alias }
 
 // Columns return columns for Subquery
 func (*DO) Columns(cols ...field.Expr) Columns { return cols }
-
-// ======================== chainable api ========================
 
 // Not ...
 func (d *DO) Not(conds ...Condition) Dao {
@@ -623,8 +623,6 @@ func getFromClause(db *gorm.DB) *clause.From {
 	}
 	return &from
 }
-
-// ======================== finisher api ========================
 
 // Create ...
 func (d *DO) Create(value interface{}) error {
@@ -1148,6 +1146,8 @@ func runConditionalPreload(parentDB *gorm.DB, subset reflect.Value, path string,
 	return tx.Error
 }
 
+// AddError records err on the underlying GORM statement and returns the
+// combined statement error.
 func (d *DO) AddError(err error) error {
 	return d.underlyingDB().AddError(err)
 }
@@ -1266,8 +1266,6 @@ func toClauseJoins(joins ...field.RelationJoin) []clause.Join {
 	return clauseJoins
 }
 
-// ======================== New Table ========================
-
 // Table return a new table produced by subquery,
 // the return value has to be used as root node
 //
@@ -1305,8 +1303,6 @@ func Table(subQueries ...SubQuery) Dao {
 func Exists(subQuery SubQuery) Condition {
 	return field.CompareSubQuery(field.ExistsOp, nil, subQuery.underlyingDB())
 }
-
-// ======================== sub query method ========================
 
 // Columns columns array
 type Columns []field.Expr

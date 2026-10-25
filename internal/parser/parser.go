@@ -14,7 +14,7 @@ import (
 
 // InterfaceSet ...
 type InterfaceSet struct {
-	Interfaces []InterfaceInfo
+	Interfaces []InterfaceInfo   // interfaces discovered in the requested source packages
 	imports    map[string]string // package name -> quoted "package path"
 	fset       *token.FileSet
 	filename   string
@@ -22,11 +22,11 @@ type InterfaceSet struct {
 
 // InterfaceInfo ...
 type InterfaceInfo struct {
-	Name        string
-	Doc         string
-	Methods     []*Method
-	Package     string
-	ApplyStruct []string
+	Name        string    // interface type name
+	Doc         string    // interface documentation
+	Methods     []*Method // parsed DIY query methods
+	Package     string    // import path containing the interface
+	ApplyStruct []string  // model names to which the interface should be bound
 }
 
 // MatchStruct ...
@@ -42,16 +42,21 @@ func (i *InterfaceInfo) MatchStruct(name string) bool {
 // ParseFile get interface's info from source file
 func (i *InterfaceSet) ParseFile(paths []*InterfacePath, structNames []string) error {
 	for _, path := range paths {
+		found := false
 		for _, file := range path.Files {
 			absFilePath, err := filepath.Abs(file)
 			if err != nil {
 				return fmt.Errorf("file not found: %s", file)
 			}
 
-			err = i.getInterfaceFromFile(absFilePath, path.Name, path.FullName, structNames)
+			matched, err := i.getInterfaceFromFile(absFilePath, path.Name, path.FullName, structNames)
 			if err != nil {
 				return fmt.Errorf("can't get interface from %s:%s", path.FullName, err)
 			}
+			found = found || matched
+		}
+		if !found {
+			return fmt.Errorf("interface %s not found in package %s", path.FullName, path.Package)
 		}
 	}
 	return nil
@@ -119,36 +124,38 @@ func (i *InterfaceSet) Visit(n ast.Node) (w ast.Visitor) {
 
 // getInterfaceFromFile get interfaces
 // get all interfaces from file and compare with specified name
-func (i *InterfaceSet) getInterfaceFromFile(filename string, name, Package string, structNames []string) error {
+func (i *InterfaceSet) getInterfaceFromFile(filename string, name, Package string, structNames []string) (bool, error) {
 	fileset := token.NewFileSet()
 	f, err := parser.ParseFile(fileset, filename, nil, parser.ParseComments)
 	if err != nil {
-		return fmt.Errorf("can't parse file %q: %s", filename, err)
+		return false, fmt.Errorf("can't parse file %q: %s", filename, err)
 	}
 
 	astResult := &InterfaceSet{imports: make(map[string]string), fset: fileset, filename: filename}
 	ast.Walk(astResult, f)
 
+	matched := false
 	for _, info := range astResult.Interfaces {
 		if name == info.Name {
 			info.Package = Package
 			info.ApplyStruct = structNames
 			i.Interfaces = append(i.Interfaces, info)
+			matched = true
 		}
 	}
 
-	return nil
+	return matched, nil
 }
 
 // Param parameters in method
 type Param struct { // (user model.User)
-	PkgPath   string // package's path: internal/model
-	Package   string // package's name: model
-	Name      string // param's name: user
-	Type      string // param's type: User
-	IsArray   bool   // is array or not
-	IsPointer bool   // is pointer or not
-	IsVariadic bool  // is variadic or not
+	PkgPath    string // package's path: internal/model
+	Package    string // package's name: model
+	Name       string // param's name: user
+	Type       string // param's type: User
+	IsArray    bool   // is array or not
+	IsPointer  bool   // is pointer or not
+	IsVariadic bool   // is variadic or not
 }
 
 // Eq if param equal to another
@@ -181,9 +188,9 @@ func (p *Param) IsGenT() bool {
 	return p.Package == "gen" && p.Type == "T"
 }
 
-// IsInterface ...
+// IsInterface ... ("interface{}" or its "any" alias)
 func (p *Param) IsInterface() bool {
-	return p.Type == "interface{}"
+	return p.Package == "" && (p.Type == "interface{}" || p.Type == "any")
 }
 
 // IsNull ...
@@ -276,7 +283,7 @@ func (p *Param) IsBaseType() bool {
 func (p *Param) astGetParamType(param *ast.Field) {
 	switch v := param.Type.(type) {
 	case *ast.Ident:
-		p.Type = v.Name
+		p.Type = normalizeIdentType(v)
 		if v.Obj != nil {
 			p.Package = "UNDEFINED" // set a placeholder
 		}
@@ -308,7 +315,7 @@ func (p *Param) astGetParamType(param *ast.Field) {
 func (p *Param) astGetEltType(expr ast.Expr) {
 	switch v := expr.(type) {
 	case *ast.Ident:
-		p.Type = v.Name
+		p.Type = normalizeIdentType(v)
 		if v.Obj != nil {
 			p.Package = "UNDEFINED"
 		}
@@ -346,9 +353,23 @@ func (p *Param) astGetMapType(expr *ast.MapType) {
 func astGetType(expr ast.Expr) string {
 	switch v := expr.(type) {
 	case *ast.Ident:
-		return v.Name
+		return normalizeIdentType(v)
 	case *ast.InterfaceType:
 		return "interface{}"
 	}
 	return ""
+}
+
+// normalizeIdentType canonicalizes a type identifier: the universe-scope
+// "any" alias is mapped onto the canonical "interface{}" spelling so
+// downstream checks only ever see one form. v.Obj == nil plus no package
+// qualifier identifies the predeclared alias; a user-defined type named
+// "any" in the parsed file resolves to an object and is left alone (a
+// same-named type declared in another file of the package is beyond the
+// file scope go/parser resolves).
+func normalizeIdentType(v *ast.Ident) string {
+	if v.Name == "any" && v.Obj == nil {
+		return "interface{}"
+	}
+	return v.Name
 }
